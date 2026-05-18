@@ -54,3 +54,16 @@ class SpritesheetDataset(Dataset):
         arr2 = np.array(Image.open(path2))
         x = torch.tensor(np.stack([arr1, arr2], axis=0), dtype=torch.long)
         return x, direction, str(path1)
+
+
+class SpriteX0Model(DummyX0Model):
+    """DummyX0Model with 4-class direction conditioning instead of 10-class MNIST."""
+
+    def __init__(self, n_channel: int, N: int):
+        super().__init__(n_channel, N)
+        self.cond_embedding_1 = nn.Embedding(4, 16)
+        self.cond_embedding_2 = nn.Embedding(4, 32)
+        self.cond_embedding_3 = nn.Embedding(4, 64)
+        self.cond_embedding_4 = nn.Embedding(4, 512)
+        self.cond_embedding_5 = nn.Embedding(4, 512)
+        self.cond_embedding_6 = nn.Embedding(4, 64)

@@ -82,3 +82,38 @@ def test_dataset_dataloader_batches(data_dir):
     assert x_batch.shape == (2, 2, 32, 32)
     assert cond_batch.shape == (2,)
     assert len(paths) == 2
+
+
+# ── SpriteX0Model ─────────────────────────────────────────────────────────
+
+from d3pm_runner_spritesheet import SpriteX0Model
+
+
+def test_sprite_x0_model_output_shape():
+    N = 8
+    model = SpriteX0Model(n_channel=2, N=N)
+    model.eval()
+    x = torch.randint(0, N, (1, 2, 32, 32))
+    t = torch.tensor([50])
+    cond = torch.tensor([0])
+    with torch.no_grad():
+        out = model(x, t, cond)
+    assert out.shape == (1, 2, 32, 32, N), f"got {out.shape}"
+
+
+def test_sprite_x0_model_all_four_directions():
+    model = SpriteX0Model(n_channel=2, N=4)
+    model.eval()
+    for direction in range(4):
+        x = torch.randint(0, 4, (1, 2, 32, 32))
+        t = torch.tensor([1])
+        cond = torch.tensor([direction])
+        with torch.no_grad():
+            out = model(x, t, cond)
+        assert out.shape == (1, 2, 32, 32, 4), f"direction {direction} failed"
+
+
+def test_sprite_x0_model_embeddings_are_4_class():
+    model = SpriteX0Model(n_channel=2, N=8)
+    assert model.cond_embedding_1.num_embeddings == 4
+    assert model.cond_embedding_6.num_embeddings == 4
