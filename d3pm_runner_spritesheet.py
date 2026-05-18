@@ -31,6 +31,13 @@ class SpritesheetDataset(Dataset):
             if frame2.exists():
                 self.pairs.append((f, frame2, DIRECTION_MAP[direction]))
 
+        if not self.pairs:
+            raise ValueError(
+                f"No valid GIF pairs found in {self.data_dir!r}. "
+                "Files must follow the pattern <char>_<dir>1.gif / <char>_<dir>2.gif "
+                "where <dir> is one of: fr, bk, lf, rt."
+            )
+
         max_idx = 0
         for path1, path2, _ in self.pairs:
             for path in (path1, path2):
