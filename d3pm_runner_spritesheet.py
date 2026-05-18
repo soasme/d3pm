@@ -67,3 +67,66 @@ class SpriteX0Model(DummyX0Model):
         self.cond_embedding_4 = nn.Embedding(4, 512)
         self.cond_embedding_5 = nn.Embedding(4, 512)
         self.cond_embedding_6 = nn.Embedding(4, 64)
+
+
+def generate_frame(
+    d3pm,
+    anchor_frames,
+    direction,
+    device,
+    total_frames=2,
+    predict_frame=1,
+):
+    """
+    Generate one frame via reverse diffusion, clamping all known anchor frames
+    after every p_sample step.
+
+    Args:
+        d3pm: trained D3PM instance
+        anchor_frames: dict {frame_idx: LongTensor [H, W]} of known frames
+        direction: int, 0=fr 1=bk 2=lf 3=rt
+        device: torch device string or object
+        total_frames: total frames in the clip (default 2)
+        predict_frame: index of the frame to generate (default 1)
+
+    Returns:
+        LongTensor [H, W] — generated frame palette indices
+    """
+    N = d3pm.num_classses
+    H, W = next(iter(anchor_frames.values())).shape
+    x = torch.randint(0, N, (1, total_frames, H, W), device=device)
+    for idx, frame in anchor_frames.items():
+        x[:, idx] = frame.to(device)
+
+    cond = torch.tensor([direction], device=device)
+
+    for t in reversed(range(1, d3pm.n_T)):
+        t_tensor = torch.tensor([t], device=device)
+        noise = torch.rand((*x.shape, N), device=device)
+        x = d3pm.p_sample(x, t_tensor, cond, noise)
+        for idx, frame in anchor_frames.items():
+            x[:, idx] = frame.to(device)
+
+    return x[0, predict_frame]
+
+
+def generate_frames(d3pm, frame1, direction, device, n_frames):
+    """
+    Autoregressively generate n_frames total (including frame1) by chaining
+    generate_frame calls. Each generated frame becomes the anchor for the next.
+
+    Args:
+        d3pm: trained D3PM instance
+        frame1: LongTensor [H, W] — the known first frame
+        direction: int, 0=fr 1=bk 2=lf 3=rt
+        device: torch device string or object
+        n_frames: total number of frames to return (including frame1)
+
+    Returns:
+        list of n_frames LongTensors, each [H, W]
+    """
+    frames = [frame1]
+    for _ in range(n_frames - 1):
+        next_frame = generate_frame(d3pm, {0: frames[-1]}, direction, device)
+        frames.append(next_frame)
+    return frames

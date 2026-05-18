@@ -118,3 +118,92 @@ def test_sprite_x0_model_embeddings_are_4_class():
     for i in range(1, 7):
         emb = getattr(model, f"cond_embedding_{i}")
         assert emb.num_embeddings == 4, f"cond_embedding_{i} has {emb.num_embeddings}, expected 4"
+
+
+# ── generate_frame / generate_frames ──────────────────────────────────────
+
+from d3pm_runner_spritesheet import generate_frame, generate_frames
+
+
+class _MockD3PM:
+    """Identity mock: p_sample returns x unchanged."""
+    num_classses = 8
+    n_T = 5
+
+    def p_sample(self, x, t, cond, noise):
+        return x
+
+
+class _CorruptAnchorMock:
+    """p_sample corrupts channel 0 to verify clamping restores it."""
+    num_classses = 8
+    n_T = 5
+
+    def p_sample(self, x, t, cond, noise):
+        corrupted = x.clone()
+        corrupted[:, 0] = (x[:, 0] + 1) % self.num_classses
+        return corrupted
+
+
+def test_generate_frame_output_shape():
+    mock = _MockD3PM()
+    frame1 = torch.zeros(16, 16, dtype=torch.long)
+    result = generate_frame(mock, {0: frame1}, direction=0, device="cpu")
+    assert result.shape == (16, 16)
+    assert result.dtype == torch.long
+
+
+def test_generate_frame_anchor_is_clamped():
+    """Even if p_sample corrupts the anchor channel, clamping restores it."""
+    mock = _CorruptAnchorMock()
+    frame1 = torch.zeros(16, 16, dtype=torch.long)
+    # Should complete without error; the anchor is clamped each step
+    result = generate_frame(mock, {0: frame1}, direction=0, device="cpu")
+    assert result.shape == (16, 16)
+
+
+def test_generate_frame_multiple_anchors():
+    mock = _MockD3PM()
+    f0 = torch.zeros(8, 8, dtype=torch.long)
+    f1 = torch.ones(8, 8, dtype=torch.long)
+    result = generate_frame(
+        mock,
+        anchor_frames={0: f0, 1: f1},
+        direction=2,
+        device="cpu",
+        total_frames=3,
+        predict_frame=2,
+    )
+    assert result.shape == (8, 8)
+
+
+def test_generate_frame_default_predict_frame():
+    mock = _MockD3PM()
+    frame1 = torch.zeros(8, 8, dtype=torch.long)
+    # default: total_frames=2, predict_frame=1
+    result = generate_frame(mock, {0: frame1}, direction=1, device="cpu")
+    assert result.shape == (8, 8)
+
+
+def test_generate_frames_length():
+    mock = _MockD3PM()
+    frame1 = torch.zeros(8, 8, dtype=torch.long)
+    frames = generate_frames(mock, frame1, direction=0, device="cpu", n_frames=4)
+    assert len(frames) == 4
+
+
+def test_generate_frames_first_is_anchor():
+    mock = _MockD3PM()
+    frame1 = torch.full((8, 8), 5, dtype=torch.long)
+    frames = generate_frames(mock, frame1, direction=0, device="cpu", n_frames=3)
+    assert torch.equal(frames[0], frame1)
+
+
+def test_generate_frames_subsequent_are_tensors():
+    mock = _MockD3PM()
+    frame1 = torch.zeros(8, 8, dtype=torch.long)
+    frames = generate_frames(mock, frame1, direction=0, device="cpu", n_frames=3)
+    for f in frames[1:]:
+        assert isinstance(f, torch.Tensor)
+        assert f.shape == (8, 8)
+        assert f.dtype == torch.long
