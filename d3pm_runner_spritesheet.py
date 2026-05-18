@@ -142,3 +142,20 @@ def generate_frames(d3pm, frame1, direction, device, n_frames):
         next_frame = generate_frame(d3pm, {0: frames[-1]}, direction, device)
         frames.append(next_frame)
     return frames
+
+
+def save_as_gif(pixel_indices, palette, path):
+    """
+    Save a palette-indexed image as a GIF file.
+
+    Args:
+        pixel_indices: LongTensor or uint8 ndarray [H, W] of palette indices
+        palette: flat list of 768 ints (256 RGB entries) from Image.getpalette()
+        path: output file path string
+    """
+    if isinstance(pixel_indices, torch.Tensor):
+        pixel_indices = pixel_indices.cpu().numpy()
+    pixel_indices = pixel_indices.astype(np.uint8)
+    img = Image.fromarray(pixel_indices, mode="P")
+    img.putpalette(palette)
+    img.save(str(path), palette=palette)

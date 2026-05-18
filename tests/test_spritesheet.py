@@ -239,3 +239,48 @@ def test_generate_frames_single_frame():
     frames = generate_frames(mock, frame1, direction=0, device="cpu", n_frames=1)
     assert len(frames) == 1
     assert torch.equal(frames[0], frame1)
+
+
+# ── save_as_gif ────────────────────────────────────────────────────────────
+
+from d3pm_runner_spritesheet import save_as_gif
+
+
+@pytest.fixture
+def flat_palette():
+    """768-int flat RGB palette (256 entries × 3 channels)."""
+    img = Image.fromarray(np.zeros((4, 4), dtype=np.uint8), mode="P")
+    img.putpalette(list(range(256)) * 3)
+    return img.getpalette()
+
+
+def test_save_as_gif_from_tensor(tmp_path, flat_palette):
+    indices = torch.tensor([[0, 1], [2, 3]], dtype=torch.long)
+    out_path = tmp_path / "out.gif"
+    save_as_gif(indices, flat_palette, str(out_path))
+    assert out_path.exists()
+    reloaded = np.array(Image.open(str(out_path)))
+    assert reloaded.shape == (2, 2)
+    assert int(reloaded[0, 0]) == 0
+    assert int(reloaded[0, 1]) == 1
+    assert int(reloaded[1, 0]) == 2
+    assert int(reloaded[1, 1]) == 3
+
+
+def test_save_as_gif_from_numpy(tmp_path, flat_palette):
+    indices = np.array([[5, 6], [7, 0]], dtype=np.uint8)
+    out_path = tmp_path / "out2.gif"
+    save_as_gif(indices, flat_palette, str(out_path))
+    assert out_path.exists()
+    reloaded = np.array(Image.open(str(out_path)))
+    assert int(reloaded[0, 0]) == 5
+    assert int(reloaded[1, 1]) == 0
+
+
+def test_save_as_gif_produces_valid_gif(tmp_path, flat_palette):
+    indices = torch.zeros(8, 8, dtype=torch.long)
+    out_path = tmp_path / "valid.gif"
+    save_as_gif(indices, flat_palette, str(out_path))
+    img = Image.open(str(out_path))
+    assert img.format == "GIF"
+    assert img.size == (8, 8)
