@@ -92,6 +92,13 @@ def generate_frame(
     Returns:
         LongTensor [H, W] — generated frame palette indices
     """
+    if not anchor_frames:
+        raise ValueError("anchor_frames must contain at least one known frame")
+    if not (0 <= predict_frame < total_frames):
+        raise ValueError(f"predict_frame={predict_frame} out of range [0, {total_frames})")
+    if predict_frame in anchor_frames:
+        raise ValueError(f"predict_frame={predict_frame} is already an anchor — nothing to generate")
+
     N = d3pm.num_classses
     H, W = next(iter(anchor_frames.values())).shape
     x = torch.randint(0, N, (1, total_frames, H, W), device=device)
@@ -124,6 +131,11 @@ def generate_frames(d3pm, frame1, direction, device, n_frames):
 
     Returns:
         list of n_frames LongTensors, each [H, W]
+
+    Note:
+        Each call uses only the immediately preceding frame as anchor (position 0).
+        This matches the 2-frame training setup. For longer sequences the model
+        accumulates drift since earlier frames are not re-anchored.
     """
     frames = [frame1]
     for _ in range(n_frames - 1):

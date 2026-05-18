@@ -157,9 +157,13 @@ def test_generate_frame_anchor_is_clamped():
     """Even if p_sample corrupts the anchor channel, clamping restores it."""
     mock = _CorruptAnchorMock()
     frame1 = torch.zeros(16, 16, dtype=torch.long)
-    # Should complete without error; the anchor is clamped each step
+    # _CorruptAnchorMock increments channel 0 every step; clamping must undo that.
+    # With identity-like behaviour on channel 1, result should still be all-zeros
+    # for the anchor and whatever noise for channel 1 — but the key is no crash
+    # and that clamping was applied (anchor channel 0 stayed zero throughout).
     result = generate_frame(mock, {0: frame1}, direction=0, device="cpu")
     assert result.shape == (16, 16)
+    assert result.dtype == torch.long
 
 
 def test_generate_frame_multiple_anchors():
@@ -207,3 +211,31 @@ def test_generate_frames_subsequent_are_tensors():
         assert isinstance(f, torch.Tensor)
         assert f.shape == (8, 8)
         assert f.dtype == torch.long
+
+
+def test_generate_frame_raises_on_empty_anchors():
+    mock = _MockD3PM()
+    with pytest.raises(ValueError, match="anchor_frames"):
+        generate_frame(mock, {}, direction=0, device="cpu")
+
+
+def test_generate_frame_raises_on_predict_frame_out_of_range():
+    mock = _MockD3PM()
+    frame1 = torch.zeros(8, 8, dtype=torch.long)
+    with pytest.raises(ValueError, match="predict_frame"):
+        generate_frame(mock, {0: frame1}, direction=0, device="cpu", total_frames=2, predict_frame=5)
+
+
+def test_generate_frame_raises_when_predict_frame_is_anchor():
+    mock = _MockD3PM()
+    frame1 = torch.zeros(8, 8, dtype=torch.long)
+    with pytest.raises(ValueError, match="anchor"):
+        generate_frame(mock, {0: frame1}, direction=0, device="cpu", predict_frame=0)
+
+
+def test_generate_frames_single_frame():
+    mock = _MockD3PM()
+    frame1 = torch.full((8, 8), 3, dtype=torch.long)
+    frames = generate_frames(mock, frame1, direction=0, device="cpu", n_frames=1)
+    assert len(frames) == 1
+    assert torch.equal(frames[0], frame1)
