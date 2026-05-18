@@ -115,5 +115,6 @@ def test_sprite_x0_model_all_four_directions():
 
 def test_sprite_x0_model_embeddings_are_4_class():
     model = SpriteX0Model(n_channel=2, N=8)
-    assert model.cond_embedding_1.num_embeddings == 4
-    assert model.cond_embedding_6.num_embeddings == 4
+    for i in range(1, 7):
+        emb = getattr(model, f"cond_embedding_{i}")
+        assert emb.num_embeddings == 4, f"cond_embedding_{i} has {emb.num_embeddings}, expected 4"
