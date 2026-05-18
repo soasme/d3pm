@@ -144,6 +144,81 @@ def generate_frames(d3pm, frame1, direction, device, n_frames):
     return frames
 
 
+if __name__ == "__main__":
+    os.makedirs("contents", exist_ok=True)
+    os.makedirs("ckpt", exist_ok=True)
+
+    data_dir = "data"
+    dataset = SpritesheetDataset(data_dir)
+    N = dataset.palette_size
+    print(f"Dataset: {len(dataset)} pairs, palette_size={N}")
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Device: {device}")
+
+    x0_model = SpriteX0Model(n_channel=2, N=N)
+    d3pm = D3PM(x0_model, n_T=1000, num_classes=N, hybrid_loss_coeff=0.0).to(device)
+    print(f"Params: {sum(p.numel() for p in d3pm.x0_model.parameters()):,}")
+
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=4)
+    optim = torch.optim.AdamW(d3pm.x0_model.parameters(), lr=1e-3)
+
+    n_epoch = 500
+    global_step = 0
+
+    for epoch in range(n_epoch):
+        d3pm.train()
+        pbar = tqdm(dataloader)
+        loss_ema = None
+
+        for x, cond, _paths in pbar:
+            optim.zero_grad()
+            x = x.to(device)
+            cond = cond.to(device)
+
+            loss, info = d3pm(x, cond)
+            loss.backward()
+            norm = torch.nn.utils.clip_grad_norm_(d3pm.x0_model.parameters(), 0.1)
+
+            if loss_ema is None:
+                loss_ema = loss.item()
+            else:
+                loss_ema = 0.99 * loss_ema + 0.01 * loss.item()
+
+            pbar.set_description(
+                f"epoch={epoch} loss={loss_ema:.4f} norm={norm:.4f} "
+                f"vb={info['vb_loss']:.4f} ce={info['ce_loss']:.4f}"
+            )
+            optim.step()
+            global_step += 1
+
+            if global_step % 300 == 1:
+                d3pm.eval()
+                with torch.no_grad():
+                    frame1 = x[0, 0]  # [H, W] from first batch item
+                    frame2_gen = generate_frame(
+                        d3pm,
+                        {0: frame1},
+                        direction=int(cond[0].item()),
+                        device=device,
+                    )
+                    f1 = (frame1.float() / max(N - 1, 1)).unsqueeze(0).unsqueeze(0).cpu()
+                    f2 = (frame2_gen.float() / max(N - 1, 1)).unsqueeze(0).unsqueeze(0).cpu()
+                    grid = make_grid(torch.cat([f1, f2], dim=0), nrow=2)
+                    arr = (grid.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
+                    Image.fromarray(arr).save(f"contents/sprite_step{global_step}.png")
+                d3pm.train()
+
+            if global_step % 1000 == 0:
+                torch.save(
+                    d3pm.x0_model.state_dict(),
+                    f"ckpt/spritesheet_step{global_step}.pt",
+                )
+
+    torch.save(d3pm.x0_model.state_dict(), "ckpt/spritesheet_final.pt")
+    print("Training complete. Weights saved to ckpt/spritesheet_final.pt")
+
+
 def save_as_gif(pixel_indices, palette, path):
     """
     Save a palette-indexed image as a GIF file.

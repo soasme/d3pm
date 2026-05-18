@@ -286,3 +286,55 @@ def test_save_as_gif_produces_valid_gif(tmp_path, flat_palette):
     img = Image.open(str(out_path))
     assert img.format == "GIF"
     assert img.size == (8, 8)
+
+
+# ── Training smoke test ────────────────────────────────────────────────────
+
+
+def test_training_one_step(data_dir):
+    """One forward+backward pass through the full D3PM pipeline."""
+    from d3pm_runner import D3PM
+    from d3pm_runner_spritesheet import SpritesheetDataset, SpriteX0Model
+
+    dataset = SpritesheetDataset(str(data_dir))
+    N = dataset.palette_size
+
+    x0_model = SpriteX0Model(n_channel=2, N=N)
+    d3pm = D3PM(x0_model, n_T=10, num_classes=N, hybrid_loss_coeff=0.0)
+
+    loader = DataLoader(dataset, batch_size=2, shuffle=False, num_workers=0)
+    x, cond, _paths = next(iter(loader))
+
+    optim = torch.optim.AdamW(d3pm.x0_model.parameters(), lr=1e-3)
+    optim.zero_grad()
+    loss, info = d3pm(x, cond)
+    loss.backward()
+    optim.step()
+
+    assert loss.item() > 0
+    assert "ce_loss" in info
+    assert "vb_loss" in info
+
+
+def test_generate_frame_with_real_d3pm(data_dir):
+    """generate_frame works end-to-end with a real (untrained) D3PM."""
+    from d3pm_runner import D3PM
+    from d3pm_runner_spritesheet import SpritesheetDataset, SpriteX0Model, generate_frame
+
+    dataset = SpritesheetDataset(str(data_dir))
+    N = dataset.palette_size
+
+    x0_model = SpriteX0Model(n_channel=2, N=N)
+    d3pm = D3PM(x0_model, n_T=5, num_classes=N, hybrid_loss_coeff=0.0)
+    d3pm.eval()
+
+    x, direction, _path = dataset[0]
+    frame1 = x[0]  # [H, W]
+
+    with torch.no_grad():
+        result = generate_frame(d3pm, {0: frame1}, direction=direction, device="cpu")
+
+    assert result.shape == frame1.shape
+    assert result.dtype == torch.long
+    assert result.min() >= 0
+    assert result.max() < N
