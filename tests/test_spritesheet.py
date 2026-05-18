@@ -249,9 +249,7 @@ from d3pm_runner_spritesheet import save_as_gif
 @pytest.fixture
 def flat_palette():
     """768-int flat RGB palette (256 entries × 3 channels)."""
-    img = Image.fromarray(np.zeros((4, 4), dtype=np.uint8), mode="P")
-    img.putpalette(list(range(256)) * 3)
-    return img.getpalette()
+    return list(range(256)) * 3
 
 
 def test_save_as_gif_from_tensor(tmp_path, flat_palette):
@@ -272,9 +270,13 @@ def test_save_as_gif_from_numpy(tmp_path, flat_palette):
     out_path = tmp_path / "out2.gif"
     save_as_gif(indices, flat_palette, str(out_path))
     assert out_path.exists()
-    reloaded = np.array(Image.open(str(out_path)))
-    assert int(reloaded[0, 0]) == 5
-    assert int(reloaded[1, 1]) == 0
+    # GIF compacts sparse palettes (only used colors kept), so raw indices may
+    # be remapped. Check visual content (RGB) rather than palette indices.
+    orig = Image.fromarray(indices, mode="P")
+    orig.putpalette(flat_palette)
+    orig_rgb = list(orig.convert("RGB").tobytes())
+    reloaded_rgb = list(Image.open(str(out_path)).convert("RGB").tobytes())
+    assert orig_rgb == reloaded_rgb
 
 
 def test_save_as_gif_produces_valid_gif(tmp_path, flat_palette):

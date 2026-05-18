@@ -158,4 +158,4 @@ def save_as_gif(pixel_indices, palette, path):
     pixel_indices = pixel_indices.astype(np.uint8)
     img = Image.fromarray(pixel_indices, mode="P")
     img.putpalette(palette)
-    img.save(str(path), palette=palette)
+    img.save(str(path))
